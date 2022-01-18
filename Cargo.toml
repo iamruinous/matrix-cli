@@ -11,8 +11,9 @@ publish = []
 [dependencies]
 anyhow = "1.0"
 structopt = "0.3"
-matrix-sdk = "0.4"
+matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk" }
 mime_guess = "2.0"
 tokio = { version = "1", features = ["full"] }
 url = { version = "2", features = ["serde"] }
 reqwest = { version = "*", features = ["native-tls-vendored"] }
+serde_json = "1.0"
