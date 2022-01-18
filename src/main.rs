@@ -93,8 +93,7 @@ async fn main() -> Result<()> {
         }
         true => {
             let session_path = File::open(session_file.unwrap())?;
-            let session: matrix_sdk::Session =
-                serde_json::from_reader(session_path)?;
+            let session: matrix_sdk::Session = serde_json::from_reader(session_path)?;
             client.restore_login(session).await?;
         }
     };
