@@ -23,10 +23,10 @@ struct Cli {
     #[structopt(short, long, env = "MATRIX_CLI_PASSWORD")]
     password: String,
 
-    /// Generate an API token from your matrix account¬
-    /// automatic registration coming later
-    //#[structopt(short, long, env = "MATRIX_CLI_TOKEN")]
-    //token: String,
+    // /// Generate an API token from your matrix account¬
+    // /// automatic registration coming later
+    // #[structopt(short, long, env = "MATRIX_CLI_TOKEN")]
+    // token: String,
 
     #[structopt(subcommand)]
     subcommands: Option<MatrixCli>,
@@ -34,15 +34,16 @@ struct Cli {
 
 #[derive(StructOpt, Debug)]
 enum MatrixCli {
+    /// Get or set user settings
     User {
         #[structopt(subcommand)]
         commands: Option<User>,
     },
 
-    Room {
-        #[structopt(subcommand)]
-        commands: Option<Room>,
-    },
+    // Room {
+    //     #[structopt(subcommand)]
+    //     commands: Option<Room>,
+    // },
 }
 
 #[derive(StructOpt, Debug)]
@@ -52,17 +53,18 @@ enum User {
         #[structopt(name = "NAME")]
         name: String,
     },
+    /// Upload the provided image and set it as the users avatar
     SetAvatar {
         #[structopt(name = "FILE")]
         file: PathBuf,
     },
 }
 
-#[derive(StructOpt, Debug)]
-enum Room {
-    /// Join a matrix Room
-    Join {},
-}
+// #[derive(StructOpt, Debug)]
+// enum Room {
+//     /// Join a matrix Room
+//     Join {},
+// }
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -99,9 +101,9 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            MatrixCli::Room { commands } => {
-                println!("{:?}", commands);
-            }
+            // MatrixCli::Room { commands } => {
+            //     println!("{:?}", commands);
+            // }
         }
     }
 
