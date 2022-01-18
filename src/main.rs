@@ -1,9 +1,10 @@
+use anyhow::Result;
+use matrix_sdk::Client;
+use mime;
+use std::fs::File;
+use std::path::PathBuf;
 use structopt::StructOpt;
 use url::Url;
-use matrix_sdk::{
-    Client, SyncSettings, Result,
-    ruma::{UserId, events::{SyncMessageEvent, room::message::MessageEventContent}},
-};
 
 #[derive(StructOpt, Debug)]
 /// matrix-cli
@@ -11,7 +12,7 @@ use matrix_sdk::{
 /// Use matrix-cli for simple matrix commands
 #[structopt(name = "matrix-cli", about = "A cli for matrix", author)]
 struct Cli {
-    /// This is your matrix homeserver: e.g. https://matrix.org 
+    /// This is your matrix homeserver: e.g. https://matrix.org
     #[structopt(short, long, env = "MATRIX_CLI_HOMESERVER_URL")]
     homeserver_url: String,
 
@@ -45,20 +46,23 @@ enum MatrixCli {
     },
 }
 
-
 #[derive(StructOpt, Debug)]
 enum User {
     /// Set the users display name
     SetDisplayName {
         #[structopt(name = "NAME")]
-        name: String
+        name: String,
+    },
+    SetAvatar {
+        #[structopt(name = "FILE")]
+        file: PathBuf,
     },
 }
 
 #[derive(StructOpt, Debug)]
 enum Room {
     /// Join a matrix Room
-    Join { },
+    Join {},
 }
 
 #[tokio::main]
@@ -70,25 +74,33 @@ async fn main() -> Result<()> {
     let password = args.password;
     let client = Client::new(homeserver_url).unwrap();
     let response = client
-        .login(&username, &password, None, Some("matrix-cli")).await
+        .login(&username, &password, None, Some("matrix-cli"))
+        .await
         .unwrap();
 
-    println!("Logged in as {}, got device_id {} and access_token {}",
-             response.user_id, response.device_id, response.access_token);
+    println!(
+        "Logged in as {}, got device_id {} and access_token {}",
+        response.user_id, response.device_id, response.access_token
+    );
     if let Some(scmd) = args.subcommands {
         match scmd {
             MatrixCli::User { commands } => {
                 if let Some(cmd) = commands {
                     match cmd {
                         User::SetDisplayName { name } => {
-                            client.set_display_name(Some(&name)).await.expect("Failed setting display name");
-                        },
+                            client.set_display_name(Some(&name)).await?
+                        }
+                        User::SetAvatar { file } => {
+                            let mut image = File::open(file)?;
+                            let response = client.upload(&mime::IMAGE_PNG, &mut image).await?;
+                            client.set_avatar_url(Some(&response.content_uri)).await?;
+                        }
                     }
                 }
-            },
+            }
             MatrixCli::Room { commands } => {
                 println!("{:?}", commands);
-            },
+            }
         }
     }
 
