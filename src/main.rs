@@ -23,11 +23,6 @@ struct Cli {
     #[structopt(short, long, env = "MATRIX_CLI_PASSWORD")]
     password: String,
 
-    // /// Generate an API token from your matrix account¬
-    // /// automatic registration coming later
-    // #[structopt(short, long, env = "MATRIX_CLI_TOKEN")]
-    // token: String,
-
     #[structopt(subcommand)]
     subcommands: Option<MatrixCli>,
 }
@@ -39,11 +34,6 @@ enum MatrixCli {
         #[structopt(subcommand)]
         commands: Option<User>,
     },
-
-    // Room {
-    //     #[structopt(subcommand)]
-    //     commands: Option<Room>,
-    // },
 }
 
 #[derive(StructOpt, Debug)]
@@ -101,9 +91,6 @@ async fn main() -> Result<()> {
                     }
                 }
             }
-            // MatrixCli::Room { commands } => {
-            //     println!("{:?}", commands);
-            // }
         }
     }
 
