@@ -1,6 +1,6 @@
 use anyhow::Result;
 use matrix_sdk::Client;
-use mime;
+use mime_guess;
 use std::fs::File;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -91,8 +91,10 @@ async fn main() -> Result<()> {
                             client.set_display_name(Some(&name)).await?
                         }
                         User::SetAvatar { file } => {
+                            let guess = mime_guess::from_path(file.as_path());
                             let mut image = File::open(file)?;
-                            let response = client.upload(&mime::IMAGE_PNG, &mut image).await?;
+                            let response =
+                                client.upload(&guess.first().unwrap(), &mut image).await?;
                             client.set_avatar_url(Some(&response.content_uri)).await?;
                         }
                     }
