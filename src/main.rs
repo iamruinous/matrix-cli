@@ -1,6 +1,5 @@
 use anyhow::Result;
 use matrix_sdk::Client;
-use mime_guess;
 use std::fs::File;
 use std::path::PathBuf;
 use structopt::StructOpt;
