@@ -5,6 +5,12 @@ CLI for Matrix written in rust
 
 Check the [releases page](https://github.com/iamruinous/matrix-cli/releases/latest) for pre-compiled binaries for many platforms.
 
+### MacOS (via brew)
+
+```sh
+brew install iamruinous/matrix-tools/matrix-cli
+```
+
 ### From Source
 
 ```sh
