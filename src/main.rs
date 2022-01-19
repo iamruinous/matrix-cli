@@ -1,8 +1,15 @@
+// TODO: Everything in here needs better error handling
+
 use anyhow::Result;
+use matrix_sdk::config::{ClientConfig, SyncSettings};
+use matrix_sdk::ruma::api::client::r0::room::create_room::Request as CreateRoomRequest;
+// use matrix_sdk::ruma::identifiers::RoomName;
+use matrix_sdk::ruma::{RoomId, RoomOrAliasId, ServerName};
 use matrix_sdk::Client;
 use std::fs::File;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use tabled::{Style, Table, Tabled};
 use url::Url;
 
 #[derive(StructOpt, Debug)]
@@ -27,6 +34,10 @@ struct Cli {
     #[structopt(short, long, env = "MATRIX_CLI_SESSION_FILE")]
     session_file: Option<PathBuf>,
 
+    /// Store state information here
+    #[structopt(long, env = "MATRIX_CLI_STORE_PATH")]
+    store_path: Option<PathBuf>,
+
     #[structopt(subcommand)]
     subcommands: Option<MatrixCli>,
 }
@@ -37,6 +48,11 @@ enum MatrixCli {
     User {
         #[structopt(subcommand)]
         commands: Option<User>,
+    },
+    /// Manage rooms
+    Room {
+        #[structopt(subcommand)]
+        commands: Option<Room>,
     },
 }
 
@@ -49,24 +65,53 @@ enum User {
         #[structopt(name = "NAME")]
         name: String,
     },
+    /// Get the current avatar url
+    GetAvatarUrl {},
     /// Upload the provided image and set it as the users avatar
     SetAvatar {
         #[structopt(name = "FILE")]
         file: PathBuf,
     },
+    /// List the rooms a user is invited to
+    InvitedRooms {},
+    /// List the rooms a user is currently in
+    JoinedRooms {},
+    /// List the rooms a user has left
+    LeftRooms {},
 }
 
-// #[derive(StructOpt, Debug)]
-// enum Room {
-//     /// Join a matrix Room
-//     Join {},
-// }
+#[derive(StructOpt, Debug)]
+enum Room {
+    /// Create a matrix room
+    Create {},
+    /// Join a matrix room
+    Join {
+        /// Room name or ID
+        #[structopt(name = "ROOM")]
+        room: String,
+    },
+    /// Leave a matrix room
+    Leave {
+        /// Room name or ID
+        #[structopt(name = "ROOM")]
+        room: String,
+    },
+}
+
+#[derive(Tabled)]
+struct RoomRow {
+    id: String,
+    alias: String,
+    description: String,
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Cli::from_args();
+    let store_path = args.store_path;
     let homeserver_url_str = args.homeserver_url;
-    let homeserver_url = Url::parse(&homeserver_url_str).unwrap();
+    let homeserver_url = Url::parse(&homeserver_url_str).expect("Could not parse homeserver_url");
+    let hostname = homeserver_url.host_str().unwrap();
 
     let session_file = args.session_file;
     let session_file_exists = match &session_file {
@@ -74,7 +119,12 @@ async fn main() -> Result<()> {
         Some(f) => f.exists(),
     };
 
-    let client = Client::new(homeserver_url).unwrap();
+    let mut config = ClientConfig::new();
+    if let Some(store_path) = store_path {
+        config = config.store_path(store_path);
+    };
+    let client = Client::new_with_config(homeserver_url.clone(), config)
+        .expect("Could not connect to homeserver");
     match session_file_exists {
         false => {
             let username = args.username.unwrap();
@@ -98,6 +148,8 @@ async fn main() -> Result<()> {
         }
     };
 
+    client.sync_once(SyncSettings::default()).await.unwrap();
+
     if let Some(scmd) = args.subcommands {
         match scmd {
             MatrixCli::User { commands } => {
@@ -114,12 +166,108 @@ async fn main() -> Result<()> {
                         User::SetDisplayName { name } => {
                             client.set_display_name(Some(&name)).await?;
                         }
+                        User::GetAvatarUrl {} => {
+                            let avatar_url = client.avatar_url().await?.unwrap();
+                            println!("{}", avatar_url);
+                        }
                         User::SetAvatar { file } => {
                             let guess = mime_guess::from_path(file.as_path());
                             let mut image = File::open(file)?;
                             let response =
                                 client.upload(&guess.first().unwrap(), &mut image).await?;
                             client.set_avatar_url(Some(&response.content_uri)).await?;
+                        }
+                        User::InvitedRooms {} => {
+                            let mut data: Vec<RoomRow> = Vec::new();
+                            for room in client.invited_rooms() {
+                                let room_id = room.room_id();
+                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
+                                let room_alias = match room.canonical_alias() {
+                                    None => "".to_owned(),
+                                    Some(alias) => {
+                                        format!("#{}:{}", alias.alias(), room_id.server_name())
+                                    }
+                                };
+                                let rr = RoomRow {
+                                    id: room_id.to_string(),
+                                    alias: room_alias,
+                                    description: display_name,
+                                };
+                                data.push(rr);
+                            }
+                            let t = Table::new(&data).with(Style::GITHUB_MARKDOWN);
+                            println!("{}", t);
+                        }
+                        User::LeftRooms {} => {
+                            let mut data: Vec<RoomRow> = Vec::new();
+                            for room in client.left_rooms() {
+                                let room_id = room.room_id();
+                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
+                                let room_alias = match room.canonical_alias() {
+                                    None => "".to_owned(),
+                                    Some(alias) => {
+                                        format!("#{}:{}", alias.alias(), room_id.server_name())
+                                    }
+                                };
+                                let rr = RoomRow {
+                                    id: room_id.to_string(),
+                                    alias: room_alias,
+                                    description: display_name,
+                                };
+                                data.push(rr);
+                            }
+                            let t = Table::new(&data).with(Style::GITHUB_MARKDOWN);
+                            println!("{}", t);
+                        }
+                        User::JoinedRooms {} => {
+                            let mut data: Vec<RoomRow> = Vec::new();
+                            for room in client.joined_rooms() {
+                                let room_id = room.room_id();
+                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
+                                let room_alias = match room.canonical_alias() {
+                                    None => "".to_owned(),
+                                    Some(alias) => {
+                                        format!("#{}:{}", alias.alias(), room_id.server_name())
+                                    }
+                                };
+                                let rr = RoomRow {
+                                    id: room_id.to_string(),
+                                    alias: room_alias,
+                                    description: display_name,
+                                };
+                                data.push(rr);
+                            }
+                            let t = Table::new(&data).with(Style::PSQL);
+                            println!("{}", t);
+                        }
+                    }
+                }
+            }
+            MatrixCli::Room { commands } => {
+                if let Some(cmd) = commands {
+                    match cmd {
+                        Room::Create {} => {
+                            let request = CreateRoomRequest::new();
+                            // let room_name = <&RoomName>::try_from(&n[..]).unwrap();
+                            let response = client.create_room(request).await?;
+                            println!("{:?}", response);
+                        }
+                        Room::Join { room } => {
+                            let room_id = <&RoomOrAliasId>::try_from(&room[..]).unwrap();
+                            let server_name: Box<ServerName> = <&ServerName>::try_from(hostname)
+                                .unwrap()
+                                .try_into()
+                                .unwrap();
+                            client
+                                .join_room_by_id_or_alias(room_id, &[server_name])
+                                .await?;
+                        }
+                        Room::Leave { room } => {
+                            let room_id = <&RoomId>::try_from(&room[..]).expect("Invalid Room ID");
+                            let room = client
+                                .get_joined_room(room_id)
+                                .expect("User does not belong to this room");
+                            room.leave().await?;
                         }
                     }
                 }

@@ -10,7 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - user get-display-name
+- user get-avatar-url
+- room create
+- room join
+- room leave
 - Ability to save/restore a session
+- save state store
 
 ## [0.0.1] - 2022-01-18
 
