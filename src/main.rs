@@ -10,10 +10,7 @@ use url::Url;
 use matrix_sdk::{
     config::{ClientConfig, SyncSettings},
     ruma::api::client::r0::room::create_room::Request as CreateRoomRequest,
-    ruma::events::{
-        room::message::RoomMessageEventContent,
-        AnyMessageEventContent,
-    },
+    ruma::events::{room::message::RoomMessageEventContent, AnyMessageEventContent},
     ruma::{RoomId, RoomOrAliasId, ServerName},
     Client,
 };
