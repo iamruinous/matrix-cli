@@ -1,16 +1,19 @@
 // TODO: Everything in here needs better error handling
 
 use anyhow::Result;
-use matrix_sdk::config::{ClientConfig, SyncSettings};
-use matrix_sdk::ruma::api::client::r0::room::create_room::Request as CreateRoomRequest;
-// use matrix_sdk::ruma::identifiers::RoomName;
-use matrix_sdk::ruma::{RoomId, RoomOrAliasId, ServerName};
-use matrix_sdk::Client;
 use std::fs::File;
 use std::path::PathBuf;
 use structopt::StructOpt;
 use tabled::{Style, Table, Tabled};
 use url::Url;
+
+use matrix_sdk::{
+    config::{ClientConfig, SyncSettings},
+    ruma::api::client::r0::room::create_room::Request as CreateRoomRequest,
+    ruma::events::{room::message::RoomMessageEventContent, AnyMessageEventContent},
+    ruma::{RoomId, RoomOrAliasId, ServerName},
+    Client,
+};
 
 #[derive(StructOpt, Debug)]
 /// matrix-cli
@@ -44,6 +47,11 @@ struct Cli {
 
 #[derive(StructOpt, Debug)]
 enum MatrixCli {
+    /// Send and receive messages
+    Message {
+        #[structopt(subcommand)]
+        commands: Option<Message>,
+    },
     /// Get or set user settings
     User {
         #[structopt(subcommand)]
@@ -53,6 +61,19 @@ enum MatrixCli {
     Room {
         #[structopt(subcommand)]
         commands: Option<Room>,
+    },
+}
+
+#[derive(StructOpt, Debug)]
+enum Message {
+    /// Send a plain text message to a room
+    Send {
+        /// Room name or ID
+        #[structopt(name = "ROOM")]
+        room: String,
+        /// Message to send (plain text)
+        #[structopt(name = "MSG")]
+        msg: String,
     },
 }
 
@@ -106,52 +127,41 @@ struct RoomRow {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), anyhow::Error> {
     let args = Cli::from_args();
-    let store_path = args.store_path;
-    let homeserver_url_str = args.homeserver_url;
+    let homeserver_url_str = args.homeserver_url.clone();
     let homeserver_url = Url::parse(&homeserver_url_str).expect("Could not parse homeserver_url");
     let hostname = homeserver_url.host_str().unwrap();
 
-    let session_file = args.session_file;
-    let session_file_exists = match &session_file {
-        None => false,
-        Some(f) => f.exists(),
-    };
-
-    let mut config = ClientConfig::new();
-    if let Some(store_path) = store_path {
-        config = config.store_path(store_path);
-    };
-    let client = Client::new_with_config(homeserver_url.clone(), config)
-        .expect("Could not connect to homeserver");
-    match session_file_exists {
-        false => {
-            let username = args.username.unwrap();
-            let password = args.password.unwrap();
-            let _response = client
-                .login(&username, &password, None, Some("matrix-cli"))
-                .await?;
-
-            // Only write the session if the session_file is specified
-            if session_file.is_some() {
-                let session_path = File::create(session_file.unwrap())?;
-                let session = client.session().await.unwrap();
-
-                serde_json::to_writer(session_path, &session)?;
-            }
-        }
-        true => {
-            let session_path = File::open(session_file.unwrap())?;
-            let session: matrix_sdk::Session = serde_json::from_reader(session_path)?;
-            client.restore_login(session).await?;
-        }
-    };
-
-    client.sync_once(SyncSettings::default()).await.unwrap();
+    let client = login_and_sync(
+        args.homeserver_url,
+        args.username,
+        args.password,
+        args.session_file,
+        args.store_path,
+    )
+    .await?;
 
     if let Some(scmd) = args.subcommands {
         match scmd {
+            MatrixCli::Message { commands } => {
+                if let Some(cmd) = commands {
+                    match cmd {
+                        Message::Send { room, msg } => {
+                            let room_id = <&RoomId>::try_from(&room[..]).expect("Invalid Room ID");
+                            let mroom = client
+                                .get_joined_room(room_id)
+                                .expect("User has not joined this room");
+
+                            let content = AnyMessageEventContent::RoomMessage(
+                                RoomMessageEventContent::text_plain(msg),
+                            );
+
+                            mroom.send(content, None).await?;
+                        }
+                    };
+                };
+            }
             MatrixCli::User { commands } => {
                 if let Some(cmd) = commands {
                     match cmd {
@@ -276,4 +286,51 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+async fn login_and_sync(
+    homeserver_url_str: String,
+    username: Option<String>,
+    password: Option<String>,
+    session_file: Option<PathBuf>,
+    store_path: Option<PathBuf>,
+) -> Result<Client, matrix_sdk::Error> {
+    let homeserver_url = Url::parse(&homeserver_url_str).expect("Could not parse homeserver_url");
+    let session_file_exists = match &session_file {
+        None => false,
+        Some(sf) => sf.exists(),
+    };
+
+    let mut config = ClientConfig::new();
+    if let Some(store_path) = store_path {
+        config = config.store_path(store_path);
+    };
+    let client = Client::new_with_config(homeserver_url.clone(), config)
+        .expect("Could not connect to homeserver");
+    match session_file_exists {
+        false => {
+            let username = username.expect("Missing username");
+            let password = password.expect("Missing password");
+            let _response = client
+                .login(&username, &password, None, Some("matrix-cli"))
+                .await?;
+
+            // Only write the session if the session_file is specified
+            if session_file.is_some() {
+                let session_path = File::create(session_file.unwrap())?;
+                let session = client.session().await.unwrap();
+
+                serde_json::to_writer(session_path, &session)?;
+            }
+        }
+        true => {
+            let session_path = File::open(session_file.unwrap())?;
+            let session: matrix_sdk::Session = serde_json::from_reader(session_path)?;
+            client.restore_login(session).await?;
+        }
+    };
+
+    client.sync_once(SyncSettings::default()).await.unwrap();
+
+    Ok(client)
 }
