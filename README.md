@@ -1,6 +1,8 @@
 # matrix-cli
 CLI for Matrix written in rust
 
+⚠️ matrix-cli is very new, commands may change or be reorganized until things are more mature. ⚠️
+
 ## Installing
 
 Check the [releases page](https://github.com/iamruinous/matrix-cli/releases/latest) for pre-compiled binaries for many platforms.
@@ -17,6 +19,33 @@ brew install iamruinous/matrix-tools/matrix-cli
 git clone https://github.com/iamruinous/matrix-cli.git
 cargo install --path .
 matrix-cli --help
+```
+## Supported commands
+
+⚠️ These commands will likely change as the tool matures.
+
+```sh
+matrix-cli user
+  get-avatar-url      Get the current avatar url
+  get-display-name    Gets the users display name
+  invited-rooms       List the rooms a user is invited to
+  joined-rooms        List the rooms a user is currently in
+  left-rooms          List the rooms a user has left
+  set-avatar          Upload the provided image and set it as the users avatar
+  set-display-name    Set the users display name
+```
+
+```sh
+matrix-cli room
+  create    Create a matrix room
+  help      Prints this message or the help of the given subcommand(s)
+  join      Join a matrix room
+  leave     Leave a matrix room
+```
+
+```sh
+matrix-cli message
+  send      Send a plain text message to a room
 ```
 
 ## Usage
