@@ -3,9 +3,9 @@
 use anyhow::Result;
 use std::fs::File;
 use std::path::PathBuf;
-use structopt::StructOpt;
 use tabled::{Style, Table, Tabled};
 use url::Url;
+use clap::{Parser, Subcommand};
 
 use matrix_sdk::{
     config::{ClientConfig, SyncSettings},
@@ -15,82 +15,82 @@ use matrix_sdk::{
     Client,
 };
 
-#[derive(StructOpt, Debug)]
 /// matrix-cli
 ///
 /// Use matrix-cli for simple matrix commands
-#[structopt(name = "matrix-cli", about = "A cli for matrix", author)]
+#[derive(Parser, Debug)]
+#[clap(author, version, about, long_about = None)]
 struct Cli {
     /// This is your matrix homeserver: e.g. https://matrix.org
-    #[structopt(short, long, env = "MATRIX_CLI_HOMESERVER_URL")]
+    #[clap(short, long, env = "MATRIX_CLI_HOMESERVER_URL")]
     homeserver_url: String,
 
     /// Your matrix username
-    #[structopt(short, long, env = "MATRIX_CLI_USERNAME")]
+    #[clap(short, long, env = "MATRIX_CLI_USERNAME")]
     username: Option<String>,
 
     /// Your matrix password
-    #[structopt(short, long, env = "MATRIX_CLI_PASSWORD")]
+    #[clap(short, long, env = "MATRIX_CLI_PASSWORD")]
     password: Option<String>,
 
     /// Use or store the session information here
-    #[structopt(short, long, env = "MATRIX_CLI_SESSION_FILE")]
+    #[clap(short, long, env = "MATRIX_CLI_SESSION_FILE")]
     session_file: Option<PathBuf>,
 
     /// Store state information here
-    #[structopt(long, env = "MATRIX_CLI_STORE_PATH")]
+    #[clap(long, env = "MATRIX_CLI_STORE_PATH")]
     store_path: Option<PathBuf>,
 
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     subcommands: Option<MatrixCli>,
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Subcommand, Debug)]
 enum MatrixCli {
     /// Send and receive messages
     Message {
-        #[structopt(subcommand)]
+        #[clap(subcommand)]
         commands: Option<Message>,
     },
     /// Get or set user settings
     User {
-        #[structopt(subcommand)]
+        #[clap(subcommand)]
         commands: Option<User>,
     },
     /// Manage rooms
     Room {
-        #[structopt(subcommand)]
+        #[clap(subcommand, name="foom")]
         commands: Option<Room>,
     },
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Subcommand, Debug)]
 enum Message {
     /// Send a plain text message to a room
     Send {
         /// Room name or ID
-        #[structopt(name = "ROOM")]
+        #[clap(name = "ROOM")]
         room: String,
         /// Message to send (plain text)
-        #[structopt(name = "MSG")]
+        #[clap(name = "MSG")]
         msg: String,
     },
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Subcommand, Debug)]
 enum User {
     /// Gets the users display name
     GetDisplayName {},
     /// Set the users display name
     SetDisplayName {
-        #[structopt(name = "NAME")]
+        #[clap(name = "NAME")]
         name: String,
     },
     /// Get the current avatar url
     GetAvatarUrl {},
     /// Upload the provided image and set it as the users avatar
     SetAvatar {
-        #[structopt(name = "FILE")]
+        #[clap(name = "FILE")]
         file: PathBuf,
     },
     /// List the rooms a user is invited to
@@ -101,20 +101,20 @@ enum User {
     LeftRooms {},
 }
 
-#[derive(StructOpt, Debug)]
+#[derive(Subcommand, Debug)]
 enum Room {
     /// Create a matrix room
     Create {},
     /// Join a matrix room
     Join {
         /// Room name or ID
-        #[structopt(name = "ROOM")]
+        #[clap(name = "ROOM")]
         room: String,
     },
     /// Leave a matrix room
     Leave {
         /// Room name or ID
-        #[structopt(name = "ROOM")]
+        #[clap(name = "ROOM")]
         room: String,
     },
 }
@@ -128,7 +128,7 @@ struct RoomRow {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
-    let args = Cli::from_args();
+    let args = Cli::parse();
     let homeserver_url_str = args.homeserver_url.clone();
     let homeserver_url = Url::parse(&homeserver_url_str).expect("Could not parse homeserver_url");
     let hostname = homeserver_url.host_str().unwrap();
