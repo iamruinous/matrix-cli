@@ -159,28 +159,11 @@ async fn main() -> Result<(), anyhow::Error> {
     )
     .await?;
 
-    // since we called `sync_once` before we entered our sync loop we must pass
-    // that sync token to `sync_with_callback`
-    // let settings = SyncSettings::default().token(client.sync_token().await.unwrap());
-
-    // let (tx, rx) = unbounded_channel();
-
-    // std::thread::spawn(move || {
-    //     loop {
-    //         let details = redis.get_message(...).unwrap();
-    //         tx.send(details).unwrap();
-    //     }
-    // });
-
-    // This loop will run every time the redis pubsub service gets a message.
-    // while let Some(details) = rx.recv().await {
-    //     // handle details
-    // }
+    // sync will run forever, so wait for process_cmd to finish, then terminate
     tokio::select! {
         _ = sync(&client) => {},
         _ = process_cmd(args.subcommands, &client, hostname) => {
         },
-
     }
     Ok(())
 }
