@@ -1,13 +1,13 @@
 // TODO: Everything in here needs better error handling
 
 use anyhow::Result;
+use chrono::{TimeZone, Utc};
 use clap::{Parser, Subcommand};
 use std::fs::File;
 use std::path::PathBuf;
 use tabled::{Style, Table, Tabled};
-use url::Url;
 use tokio::signal;
-use chrono::Utc;
+use url::Url;
 
 use matrix_sdk::{
     config::{ClientConfig, SyncSettings},
@@ -20,7 +20,7 @@ use matrix_sdk::{
         AnyMessageEventContent,
     },
     ruma::{RoomId, RoomOrAliasId, ServerName},
-    Client, 
+    Client,
 };
 
 /// matrix-cli
@@ -77,6 +77,12 @@ enum MatrixCli {
 
 #[derive(Subcommand, Debug)]
 enum MessageCmd {
+    /// Listen for messages in a room
+    Listen {
+        /// Room name or ID
+        #[clap(name = "ROOM")]
+        room: String,
+    },
     /// Send a plain text message to a room
     Send {
         /// Room name or ID
@@ -124,12 +130,6 @@ enum RoomCmd {
     },
     /// Leave a matrix room
     Leave {
-        /// Room name or ID
-        #[clap(name = "ROOM")]
-        room: String,
-    },
-    /// Listen for messages in a room
-    Listen {
         /// Room name or ID
         #[clap(name = "ROOM")]
         room: String,
@@ -258,6 +258,34 @@ async fn process_cmd(
 
                             mroom.send(content, None).await?;
                         }
+                        MessageCmd::Listen { room } => {
+                            client
+                                .register_event_handler(
+                                    |event: SyncRoomMessageEvent, room: Room| async move {
+                                        if let Room::Joined(_room) = room {
+                                            let sender = event.sender.clone();
+                                            let msg_body = match event.content.msgtype {
+                                                MessageType::Text(TextMessageEventContent {
+                                                    body,
+                                                    ..
+                                                }) => body,
+                                                _ => return,
+                                            };
+                                            let ts: i64 = event.origin_server_ts.get().into();
+                                            let date = Utc.timestamp_millis(ts);
+                                            println!(
+                                                "From: {}\nDate: {}\nMessage: {}\n",
+                                                sender, date, msg_body
+                                            );
+                                        }
+                                    },
+                                )
+                                .await;
+
+                            println!("Listening to room {}, Ctrl-C to stop", room);
+                            signal::ctrl_c().await.expect("Failed to listen for Ctrl-C");
+                            println!("Exiting.");
+                        }
                     };
                 };
             }
@@ -377,29 +405,6 @@ async fn process_cmd(
                                 .get_joined_room(room_id)
                                 .expect("User does not belong to this room");
                             room.leave().await?;
-                        }
-                        RoomCmd::Listen { room } => {
-                            client
-                                .register_event_handler(
-                                    |event: SyncRoomMessageEvent, room: Room| async move {
-                                        if let Room::Joined(_room) = room {
-                                            let sender = event.sender.clone();
-                                            let msg_body = match event.content.msgtype {
-                                                MessageType::Text(TextMessageEventContent {
-                                                    body,
-                                                    ..
-                                                }) => body,
-                                                _ => return,
-                                            };
-                                            let date = Utc.timestamp_millis(event.origin_server_ts);
-                                            println!("From: {}\nDate:\n\nMessage: {}\n", sender, date, msg_body);
-                                        }
-                                    },
-                                )
-                                .await;
-
-                            println!("Listening to room {}, Ctrl-C to stop", room);
-                            signal::ctrl_c().await.expect("Failed to listen for Ctrl-C");
                         }
                     }
                 }
