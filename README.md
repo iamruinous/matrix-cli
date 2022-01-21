@@ -45,6 +45,7 @@ matrix-cli room
 
 ```sh
 matrix-cli message
+  listen    Listen to messages in a room
   send      Send a plain text message to a room
 ```
 
