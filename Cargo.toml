@@ -10,8 +10,7 @@ publish = []
 
 [dependencies]
 anyhow = "1.0"
-futures = "0.3"
-# structopt = "0.3"
+chrono = "0.4"
 clap = { version = "3.0.10", features = ["derive", "env"] }
 matrix-sdk = { git = "https://github.com/matrix-org/matrix-rust-sdk" }
 mime_guess = "2.0"

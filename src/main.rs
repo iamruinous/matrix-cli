@@ -1,22 +1,26 @@
 // TODO: Everything in here needs better error handling
 
-use futures::future::abortable;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::fs::File;
 use std::path::PathBuf;
 use tabled::{Style, Table, Tabled};
-// use tokio::sync::mpsc::channel;
-// use tokio::sync::oneshot;
-// use tokio::time::Duration;
 use url::Url;
+use tokio::signal;
+use chrono::Utc;
 
 use matrix_sdk::{
     config::{ClientConfig, SyncSettings},
+    room::Room,
     ruma::api::client::r0::room::create_room::Request as CreateRoomRequest,
-    ruma::events::{room::message::RoomMessageEventContent, AnyMessageEventContent},
+    ruma::events::{
+        room::message::{
+            MessageType, RoomMessageEventContent, SyncRoomMessageEvent, TextMessageEventContent,
+        },
+        AnyMessageEventContent,
+    },
     ruma::{RoomId, RoomOrAliasId, ServerName},
-    Client, LoopCtrl,
+    Client, 
 };
 
 /// matrix-cli
@@ -52,24 +56,27 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum MatrixCli {
     /// Send and receive messages
-    Message {
+    #[clap(name = "message")]
+    MessageCmd {
         #[clap(subcommand)]
-        commands: Option<Message>,
+        commands: Option<MessageCmd>,
     },
     /// Get or set user settings
-    User {
+    #[clap(name = "user")]
+    UserCmd {
         #[clap(subcommand)]
-        commands: Option<User>,
+        commands: Option<UserCmd>,
     },
     /// Manage rooms
-    Room {
+    #[clap(name = "room")]
+    RoomCmd {
         #[clap(subcommand)]
-        commands: Option<Room>,
+        commands: Option<RoomCmd>,
     },
 }
 
 #[derive(Subcommand, Debug)]
-enum Message {
+enum MessageCmd {
     /// Send a plain text message to a room
     Send {
         /// Room name or ID
@@ -82,7 +89,7 @@ enum Message {
 }
 
 #[derive(Subcommand, Debug)]
-enum User {
+enum UserCmd {
     /// Gets the users display name
     GetDisplayName {},
     /// Set the users display name
@@ -106,7 +113,7 @@ enum User {
 }
 
 #[derive(Subcommand, Debug)]
-enum Room {
+enum RoomCmd {
     /// Create a matrix room
     Create {},
     /// Join a matrix room
@@ -152,200 +159,29 @@ async fn main() -> Result<(), anyhow::Error> {
     )
     .await?;
 
-    // let (tx, mut rx) = channel::<&str>(100);
-
-    // let sync_channel = &tx;
-
     // since we called `sync_once` before we entered our sync loop we must pass
     // that sync token to `sync_with_callback`
-    let settings = SyncSettings::default().token(client.sync_token().await.unwrap());
-    let (_, handle) = abortable(client.sync(settings));
-    // client
-    //     .sync_with_callback(settings, |response| async move {
-    //         // let channel = sync_channel;
-    //
-    //         println!("got response {:?}", response);
-    //         // for (_room_id, room) in response.rooms.join {
-    //         //     for _event in room.timeline.events {
-    //         //         channel.send("").await.unwrap();
-    //         //         // channel.send(("".to_string(), event)).await.unwrap();
-    //         //     }
-    //         // }
-    //
-    //         LoopCtrl::Break
-    //     })
-    //     .await;
+    // let settings = SyncSettings::default().token(client.sync_token().await.unwrap());
 
-    // while let Some(cmd) = rx.recv().await {
-    // println!("{:?}", cmd);
+    // let (tx, rx) = unbounded_channel();
+
+    // std::thread::spawn(move || {
+    //     loop {
+    //         let details = redis.get_message(...).unwrap();
+    //         tx.send(details).unwrap();
+    //     }
+    // });
+
+    // This loop will run every time the redis pubsub service gets a message.
+    // while let Some(details) = rx.recv().await {
+    //     // handle details
     // }
+    tokio::select! {
+        _ = sync(&client) => {},
+        _ = process_cmd(args.subcommands, &client, hostname) => {
+        },
 
-    if let Some(scmd) = args.subcommands {
-        match scmd {
-            MatrixCli::Message { commands } => {
-                if let Some(cmd) = commands {
-                    match cmd {
-                        Message::Send { room, msg } => {
-                            let room_id = <&RoomId>::try_from(&room[..]).expect("Invalid Room ID");
-                            let mroom = client
-                                .get_joined_room(room_id)
-                                .expect("User has not joined this room");
-
-                            let content = AnyMessageEventContent::RoomMessage(
-                                RoomMessageEventContent::text_plain(msg),
-                            );
-
-                            mroom.send(content, None).await?;
-                        }
-                    };
-                };
-            }
-            MatrixCli::User { commands } => {
-                if let Some(cmd) = commands {
-                    match cmd {
-                        User::GetDisplayName {} => {
-                            match client.display_name().await? {
-                                None => println!("Display Name Not Set"),
-                                Some(display_name) => {
-                                    println!("{}", display_name);
-                                }
-                            };
-                        }
-                        User::SetDisplayName { name } => {
-                            client.set_display_name(Some(&name)).await?;
-                        }
-                        User::GetAvatarUrl {} => {
-                            let avatar_url = client.avatar_url().await?.unwrap();
-                            println!("{}", avatar_url);
-                        }
-                        User::SetAvatar { file } => {
-                            let guess = mime_guess::from_path(file.as_path());
-                            let mut image = File::open(file)?;
-                            let response =
-                                client.upload(&guess.first().unwrap(), &mut image).await?;
-                            client.set_avatar_url(Some(&response.content_uri)).await?;
-                        }
-                        User::InvitedRooms {} => {
-                            let mut data: Vec<RoomRow> = Vec::new();
-                            for room in client.invited_rooms() {
-                                let room_id = room.room_id();
-                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
-                                let room_alias = match room.canonical_alias() {
-                                    None => "".to_owned(),
-                                    Some(alias) => {
-                                        format!("#{}:{}", alias.alias(), room_id.server_name())
-                                    }
-                                };
-                                let rr = RoomRow {
-                                    id: room_id.to_string(),
-                                    alias: room_alias,
-                                    description: display_name,
-                                };
-                                data.push(rr);
-                            }
-                            let t = Table::new(&data).with(Style::GITHUB_MARKDOWN);
-                            println!("{}", t);
-                        }
-                        User::LeftRooms {} => {
-                            let mut data: Vec<RoomRow> = Vec::new();
-                            for room in client.left_rooms() {
-                                let room_id = room.room_id();
-                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
-                                let room_alias = match room.canonical_alias() {
-                                    None => "".to_owned(),
-                                    Some(alias) => {
-                                        format!("#{}:{}", alias.alias(), room_id.server_name())
-                                    }
-                                };
-                                let rr = RoomRow {
-                                    id: room_id.to_string(),
-                                    alias: room_alias,
-                                    description: display_name,
-                                };
-                                data.push(rr);
-                            }
-                            let t = Table::new(&data).with(Style::GITHUB_MARKDOWN);
-                            println!("{}", t);
-                        }
-                        User::JoinedRooms {} => {
-                            let mut data: Vec<RoomRow> = Vec::new();
-                            for room in client.joined_rooms() {
-                                let room_id = room.room_id();
-                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
-                                let room_alias = match room.canonical_alias() {
-                                    None => "".to_owned(),
-                                    Some(alias) => {
-                                        format!("#{}:{}", alias.alias(), room_id.server_name())
-                                    }
-                                };
-                                let rr = RoomRow {
-                                    id: room_id.to_string(),
-                                    alias: room_alias,
-                                    description: display_name,
-                                };
-                                data.push(rr);
-                            }
-                            let t = Table::new(&data).with(Style::PSQL);
-                            println!("{}", t);
-                        }
-                    }
-                }
-            }
-            MatrixCli::Room { commands } => {
-                if let Some(cmd) = commands {
-                    match cmd {
-                        Room::Create {} => {
-                            let request = CreateRoomRequest::new();
-                            // let room_name = <&RoomName>::try_from(&n[..]).unwrap();
-                            let response = client.create_room(request).await?;
-                            println!("{:?}", response);
-                        }
-                        Room::Join { room } => {
-                            let room_id = <&RoomOrAliasId>::try_from(&room[..]).unwrap();
-                            let server_name: Box<ServerName> = <&ServerName>::try_from(hostname)
-                                .unwrap()
-                                .try_into()
-                                .unwrap();
-                            client
-                                .join_room_by_id_or_alias(room_id, &[server_name])
-                                .await?;
-                        }
-                        Room::Leave { room } => {
-                            let room_id = <&RoomId>::try_from(&room[..]).expect("Invalid Room ID");
-                            let room = client
-                                .get_joined_room(room_id)
-                                .expect("User does not belong to this room");
-                            room.leave().await?;
-                        }
-                        Room::Listen { room: _ } => {
-                            // since we called `sync_once` before we entered our sync loop we must pass
-                            // that sync token to `sync_with_callback`
-                            let settings =
-                                SyncSettings::default().token(client.sync_token().await.unwrap());
-                            client
-                                .sync_with_callback(settings, |response| async move {
-                                    // let channel = sync_channel;
-
-                                    println!("got response {:?}", response);
-                                    for (_room_id, room) in response.rooms.join {
-                                        for event in room.timeline.events {
-                                            println!("got event {:?}", event);
-                                            //         channel.send("").await.unwrap();
-                                            //         // channel.send(("".to_string(), event)).await.unwrap();
-                                        }
-                                    }
-
-                                    LoopCtrl::Continue
-                                })
-                                .await;
-                        }
-                    }
-                }
-            }
-        }
     }
-
-    handle.abort();
     Ok(())
 }
 
@@ -391,7 +227,185 @@ async fn login(
         }
     };
 
-    client.sync_once(SyncSettings::default()).await.unwrap();
-
     Ok(client)
+}
+
+async fn sync(client: &Client) -> Result<(), matrix_sdk::Error> {
+    client.sync(SyncSettings::default()).await;
+
+    Ok(())
+}
+
+async fn process_cmd(
+    subcommands: Option<MatrixCli>,
+    client: &Client,
+    hostname: &str,
+) -> Result<(), anyhow::Error> {
+    if let Some(scmd) = subcommands {
+        match scmd {
+            MatrixCli::MessageCmd { commands } => {
+                if let Some(cmd) = commands {
+                    match cmd {
+                        MessageCmd::Send { room, msg } => {
+                            let room_id = <&RoomId>::try_from(&room[..]).expect("Invalid Room ID");
+                            let mroom = client
+                                .get_joined_room(room_id)
+                                .expect("User has not joined this room");
+
+                            let content = AnyMessageEventContent::RoomMessage(
+                                RoomMessageEventContent::text_plain(msg),
+                            );
+
+                            mroom.send(content, None).await?;
+                        }
+                    };
+                };
+            }
+            MatrixCli::UserCmd { commands } => {
+                if let Some(cmd) = commands {
+                    match cmd {
+                        UserCmd::GetDisplayName {} => {
+                            match client.display_name().await? {
+                                None => println!("Display Name Not Set"),
+                                Some(display_name) => {
+                                    println!("{}", display_name);
+                                }
+                            };
+                        }
+                        UserCmd::SetDisplayName { name } => {
+                            client.set_display_name(Some(&name)).await?;
+                        }
+                        UserCmd::GetAvatarUrl {} => {
+                            let avatar_url = client.avatar_url().await?.unwrap();
+                            println!("{}", avatar_url);
+                        }
+                        UserCmd::SetAvatar { file } => {
+                            let guess = mime_guess::from_path(file.as_path());
+                            let mut image = File::open(file)?;
+                            let response =
+                                client.upload(&guess.first().unwrap(), &mut image).await?;
+                            client.set_avatar_url(Some(&response.content_uri)).await?;
+                        }
+                        UserCmd::InvitedRooms {} => {
+                            let mut data: Vec<RoomRow> = Vec::new();
+                            for room in client.invited_rooms() {
+                                let room_id = room.room_id();
+                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
+                                let room_alias = match room.canonical_alias() {
+                                    None => "".to_owned(),
+                                    Some(alias) => {
+                                        format!("#{}:{}", alias.alias(), room_id.server_name())
+                                    }
+                                };
+                                let rr = RoomRow {
+                                    id: room_id.to_string(),
+                                    alias: room_alias,
+                                    description: display_name,
+                                };
+                                data.push(rr);
+                            }
+                            let t = Table::new(&data).with(Style::GITHUB_MARKDOWN);
+                            println!("{}", t);
+                        }
+                        UserCmd::LeftRooms {} => {
+                            let mut data: Vec<RoomRow> = Vec::new();
+                            for room in client.left_rooms() {
+                                let room_id = room.room_id();
+                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
+                                let room_alias = match room.canonical_alias() {
+                                    None => "".to_owned(),
+                                    Some(alias) => {
+                                        format!("#{}:{}", alias.alias(), room_id.server_name())
+                                    }
+                                };
+                                let rr = RoomRow {
+                                    id: room_id.to_string(),
+                                    alias: room_alias,
+                                    description: display_name,
+                                };
+                                data.push(rr);
+                            }
+                            let t = Table::new(&data).with(Style::GITHUB_MARKDOWN);
+                            println!("{}", t);
+                        }
+                        UserCmd::JoinedRooms {} => {
+                            let mut data: Vec<RoomRow> = Vec::new();
+                            for room in client.joined_rooms() {
+                                let room_id = room.room_id();
+                                let display_name = room.name().unwrap_or_else(|| "".to_owned());
+                                let room_alias = match room.canonical_alias() {
+                                    None => "".to_owned(),
+                                    Some(alias) => {
+                                        format!("#{}:{}", alias.alias(), room_id.server_name())
+                                    }
+                                };
+                                let rr = RoomRow {
+                                    id: room_id.to_string(),
+                                    alias: room_alias,
+                                    description: display_name,
+                                };
+                                data.push(rr);
+                            }
+                            let t = Table::new(&data).with(Style::PSQL);
+                            println!("{}", t);
+                        }
+                    }
+                }
+            }
+            MatrixCli::RoomCmd { commands } => {
+                if let Some(cmd) = commands {
+                    match cmd {
+                        RoomCmd::Create {} => {
+                            let request = CreateRoomRequest::new();
+                            // let room_name = <&RoomName>::try_from(&n[..]).unwrap();
+                            let response = client.create_room(request).await?;
+                            println!("{:?}", response);
+                        }
+                        RoomCmd::Join { room } => {
+                            let room_id = <&RoomOrAliasId>::try_from(&room[..]).unwrap();
+                            let server_name: Box<ServerName> = <&ServerName>::try_from(hostname)
+                                .unwrap()
+                                .try_into()
+                                .unwrap();
+                            client
+                                .join_room_by_id_or_alias(room_id, &[server_name])
+                                .await?;
+                        }
+                        RoomCmd::Leave { room } => {
+                            let room_id = <&RoomId>::try_from(&room[..]).expect("Invalid Room ID");
+                            let room = client
+                                .get_joined_room(room_id)
+                                .expect("User does not belong to this room");
+                            room.leave().await?;
+                        }
+                        RoomCmd::Listen { room } => {
+                            client
+                                .register_event_handler(
+                                    |event: SyncRoomMessageEvent, room: Room| async move {
+                                        if let Room::Joined(_room) = room {
+                                            let sender = event.sender.clone();
+                                            let msg_body = match event.content.msgtype {
+                                                MessageType::Text(TextMessageEventContent {
+                                                    body,
+                                                    ..
+                                                }) => body,
+                                                _ => return,
+                                            };
+                                            let date = Utc.timestamp_millis(event.origin_server_ts);
+                                            println!("From: {}\nDate:\n\nMessage: {}\n", sender, date, msg_body);
+                                        }
+                                    },
+                                )
+                                .await;
+
+                            println!("Listening to room {}, Ctrl-C to stop", room);
+                            signal::ctrl_c().await.expect("Failed to listen for Ctrl-C");
+                        }
+                    }
+                }
+            }
+        }
+    };
+
+    Ok(())
 }
