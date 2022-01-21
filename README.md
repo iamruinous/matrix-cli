@@ -41,6 +41,7 @@ matrix-cli room
   help      Prints this message or the help of the given subcommand(s)
   join      Join a matrix room
   leave     Leave a matrix room
+  listen    Listen to messages in a room
 ```
 
 ```sh

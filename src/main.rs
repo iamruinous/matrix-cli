@@ -1,18 +1,22 @@
 // TODO: Everything in here needs better error handling
 
+use futures::future::abortable;
 use anyhow::Result;
+use clap::{Parser, Subcommand};
 use std::fs::File;
 use std::path::PathBuf;
 use tabled::{Style, Table, Tabled};
+// use tokio::sync::mpsc::channel;
+// use tokio::sync::oneshot;
+// use tokio::time::Duration;
 use url::Url;
-use clap::{Parser, Subcommand};
 
 use matrix_sdk::{
     config::{ClientConfig, SyncSettings},
     ruma::api::client::r0::room::create_room::Request as CreateRoomRequest,
     ruma::events::{room::message::RoomMessageEventContent, AnyMessageEventContent},
     ruma::{RoomId, RoomOrAliasId, ServerName},
-    Client,
+    Client, LoopCtrl,
 };
 
 /// matrix-cli
@@ -59,7 +63,7 @@ enum MatrixCli {
     },
     /// Manage rooms
     Room {
-        #[clap(subcommand, name="foom")]
+        #[clap(subcommand)]
         commands: Option<Room>,
     },
 }
@@ -117,6 +121,12 @@ enum Room {
         #[clap(name = "ROOM")]
         room: String,
     },
+    /// Listen for messages in a room
+    Listen {
+        /// Room name or ID
+        #[clap(name = "ROOM")]
+        room: String,
+    },
 }
 
 #[derive(Tabled)]
@@ -133,7 +143,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let homeserver_url = Url::parse(&homeserver_url_str).expect("Could not parse homeserver_url");
     let hostname = homeserver_url.host_str().unwrap();
 
-    let client = login_and_sync(
+    let client = login(
         args.homeserver_url,
         args.username,
         args.password,
@@ -141,6 +151,34 @@ async fn main() -> Result<(), anyhow::Error> {
         args.store_path,
     )
     .await?;
+
+    // let (tx, mut rx) = channel::<&str>(100);
+
+    // let sync_channel = &tx;
+
+    // since we called `sync_once` before we entered our sync loop we must pass
+    // that sync token to `sync_with_callback`
+    let settings = SyncSettings::default().token(client.sync_token().await.unwrap());
+    let (_, handle) = abortable(client.sync(settings));
+    // client
+    //     .sync_with_callback(settings, |response| async move {
+    //         // let channel = sync_channel;
+    //
+    //         println!("got response {:?}", response);
+    //         // for (_room_id, room) in response.rooms.join {
+    //         //     for _event in room.timeline.events {
+    //         //         channel.send("").await.unwrap();
+    //         //         // channel.send(("".to_string(), event)).await.unwrap();
+    //         //     }
+    //         // }
+    //
+    //         LoopCtrl::Break
+    //     })
+    //     .await;
+
+    // while let Some(cmd) = rx.recv().await {
+    // println!("{:?}", cmd);
+    // }
 
     if let Some(scmd) = args.subcommands {
         match scmd {
@@ -279,16 +317,39 @@ async fn main() -> Result<(), anyhow::Error> {
                                 .expect("User does not belong to this room");
                             room.leave().await?;
                         }
+                        Room::Listen { room: _ } => {
+                            // since we called `sync_once` before we entered our sync loop we must pass
+                            // that sync token to `sync_with_callback`
+                            let settings =
+                                SyncSettings::default().token(client.sync_token().await.unwrap());
+                            client
+                                .sync_with_callback(settings, |response| async move {
+                                    // let channel = sync_channel;
+
+                                    println!("got response {:?}", response);
+                                    for (_room_id, room) in response.rooms.join {
+                                        for event in room.timeline.events {
+                                            println!("got event {:?}", event);
+                                            //         channel.send("").await.unwrap();
+                                            //         // channel.send(("".to_string(), event)).await.unwrap();
+                                        }
+                                    }
+
+                                    LoopCtrl::Continue
+                                })
+                                .await;
+                        }
                     }
                 }
             }
         }
     }
 
+    handle.abort();
     Ok(())
 }
 
-async fn login_and_sync(
+async fn login(
     homeserver_url_str: String,
     username: Option<String>,
     password: Option<String>,
