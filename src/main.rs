@@ -1,5 +1,9 @@
 // TODO: Everything in here needs better error handling
 
+extern crate pretty_env_logger;
+#[macro_use]
+extern crate log;
+
 use anyhow::Result;
 use chrono::{TimeZone, Utc};
 use clap::{Parser, Subcommand};
@@ -218,6 +222,7 @@ struct RoomRow {
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
+    pretty_env_logger::init();
     let args = Cli::parse();
     let homeserver_url_str = args.homeserver_url.clone();
     let homeserver_url = Url::parse(&homeserver_url_str).expect("Could not parse homeserver_url");
@@ -263,32 +268,46 @@ async fn login(
         false => {
             let username = username.expect("Missing username");
             let password = password.expect("Missing password");
+            info!("Logging in to {} as {:?}", homeserver_url, &username);
             let _response = client
                 .login(&username, &password, None, Some("matrix-cli"))
                 .await?;
 
             // Only write the session if the session_file is specified
             if session_file.is_some() {
-                let session_path = File::create(session_file.unwrap())?;
+                let session_file = session_file.unwrap();
+                info!(
+                    "Saving session to {}",
+                    session_file.as_path().display().to_string()
+                );
+                let session_path = File::create(session_file)?;
                 let session = client.session().await.unwrap();
 
                 serde_json::to_writer(session_path, &session)?;
             }
         }
         true => {
-            let session_path = File::open(session_file.unwrap())?;
+            let session_file = session_file.unwrap();
+            info!(
+                "Logging in using saved session from {}",
+                session_file.as_path().display().to_string()
+            );
+            let session_path = File::open(session_file)?;
             let session: matrix_sdk::Session = serde_json::from_reader(session_path)?;
             client.restore_login(session).await?;
         }
     };
 
+    info!("Initial sync starting.",);
     // force an initial sync
     client.sync_once(SyncSettings::default()).await.unwrap();
+    info!("Initial sync complete.",);
 
     Ok(client)
 }
 
 async fn sync(client: &Client) -> Result<(), matrix_sdk::Error> {
+    info!("Starting forever sync",);
     let settings = SyncSettings::default().token(client.sync_token().await.unwrap());
     client.sync(settings).await;
 
@@ -307,9 +326,9 @@ async fn process_cmd(
                 if let Some(cmd) = commands {
                     match cmd {
                         MessageCmd::Send { room, msg } => {
-                            let room_id = <&RoomId>::try_from(&room[..]).expect("Invalid Room ID");
+                            let room_id = get_room_id_from_alias_str(&client, &room).await;
                             let mroom = client
-                                .get_joined_room(room_id)
+                                .get_joined_room(&room_id)
                                 .expect("User has not joined this room");
 
                             let content = AnyMessageEventContent::RoomMessage(
