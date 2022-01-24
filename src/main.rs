@@ -3,8 +3,8 @@
 use anyhow::Result;
 use chrono::{TimeZone, Utc};
 use clap::{Parser, Subcommand};
-use std::fs::File;
 use std::path::PathBuf;
+use std::{fs::File, ops::Deref};
 use tabled::{Style, Table, Tabled};
 use tokio::signal;
 use url::Url;
@@ -12,14 +12,24 @@ use url::Url;
 use matrix_sdk::{
     config::{ClientConfig, SyncSettings},
     room::Room,
-    ruma::api::client::r0::room::create_room::Request as CreateRoomRequest,
     ruma::events::{
         room::message::{
             MessageType, RoomMessageEventContent, SyncRoomMessageEvent, TextMessageEventContent,
         },
         AnyMessageEventContent,
     },
-    ruma::{RoomId, RoomOrAliasId, ServerName},
+    ruma::{
+        api::client::r0::{
+            alias::{
+                create_alias::Request as CreateRoomAliasRequest,
+                get_alias::Request as GetRoomAliasRequest,
+            },
+            room::create_room::{Request as CreateRoomRequest, RoomPreset},
+        },
+        identifiers::RoomName,
+        RoomVersionId,
+    },
+    ruma::{MxcUri, RoomAliasId, RoomId, RoomOrAliasId, ServerName},
     Client,
 };
 
@@ -48,6 +58,10 @@ struct Cli {
     /// Store state information here
     #[clap(long, env = "MATRIX_CLI_STORE_PATH")]
     store_path: Option<PathBuf>,
+
+    /// Print what will be done, without doing anything
+    #[clap(long, env = "MATRIX_CLI_DRY_RUN")]
+    dry_run: bool,
 
     #[clap(subcommand)]
     subcommands: Option<MatrixCli>,
@@ -110,6 +124,11 @@ enum UserCmd {
         #[clap(name = "FILE")]
         file: PathBuf,
     },
+    /// Set the avatar url
+    SetAvatarUrl {
+        #[clap(name = "URL", long_help = "Set the avatar url to the mxc://")]
+        url: String,
+    },
     /// List the rooms a user is invited to
     InvitedRooms {},
     /// List the rooms a user is currently in
@@ -121,7 +140,29 @@ enum UserCmd {
 #[derive(Subcommand, Debug)]
 enum RoomCmd {
     /// Create a matrix room
-    Create {},
+    CreateAlias {
+        /// Room name or ID
+        #[clap(name = "ROOM")]
+        room: String,
+        /// New alias
+        #[clap(name = "ALIAS")]
+        alias: String,
+    },
+    /// Create a matrix room
+    Create {
+        /// Room Name
+        #[clap(short, long)]
+        name: Option<String>,
+        /// Make the room public (private by default)
+        #[clap(name = "public", short, long)]
+        is_public: bool,
+        /// Room alias (local part only)
+        #[clap(short, long)]
+        alias: Option<String>,
+        /// Room version (defaults to homeserver default)
+        #[clap(short, long)]
+        version: Option<String>,
+    },
     /// Join a matrix room
     Join {
         /// Room name or ID
@@ -161,9 +202,8 @@ async fn main() -> Result<(), anyhow::Error> {
 
     // sync will run forever, so wait for process_cmd to finish, then terminate
     tokio::select! {
-        _ = sync(&client) => {},
-        _ = process_cmd(args.subcommands, &client, hostname) => {
-        },
+        res = sync(&client) => res?,
+        res = process_cmd(args.dry_run, args.subcommands, &client, hostname) => res?,
     }
     Ok(())
 }
@@ -210,16 +250,21 @@ async fn login(
         }
     };
 
+    // force an initial sync
+    client.sync_once(SyncSettings::default()).await.unwrap();
+
     Ok(client)
 }
 
 async fn sync(client: &Client) -> Result<(), matrix_sdk::Error> {
-    client.sync(SyncSettings::default()).await;
+    let settings = SyncSettings::default().token(client.sync_token().await.unwrap());
+    client.sync(settings).await;
 
     Ok(())
 }
 
 async fn process_cmd(
+    dry_run: bool,
     subcommands: Option<MatrixCli>,
     client: &Client,
     hostname: &str,
@@ -297,6 +342,10 @@ async fn process_cmd(
                                 client.upload(&guess.first().unwrap(), &mut image).await?;
                             client.set_avatar_url(Some(&response.content_uri)).await?;
                         }
+                        UserCmd::SetAvatarUrl { url } => {
+                            let content_uri = Box::<MxcUri>::from(&url[..]);
+                            client.set_avatar_url(Some(&content_uri)).await?;
+                        }
                         UserCmd::InvitedRooms {} => {
                             let mut data: Vec<RoomRow> = Vec::new();
                             for room in client.invited_rooms() {
@@ -366,26 +415,56 @@ async fn process_cmd(
             MatrixCli::RoomCmd { commands } => {
                 if let Some(cmd) = commands {
                     match cmd {
-                        RoomCmd::Create {} => {
-                            let request = CreateRoomRequest::new();
-                            // let room_name = <&RoomName>::try_from(&n[..]).unwrap();
-                            let response = client.create_room(request).await?;
-                            println!("{:?}", response);
+                        RoomCmd::CreateAlias { room, alias } => {
+                            let room_id = get_room_id_from_alias_str(client, &room).await;
+                            let alias_id = get_room_alias_id_from_str(&alias);
+                            let request = CreateRoomAliasRequest::new(&alias_id, &room_id);
+                            client.send(request, None).await?;
+                        }
+                        RoomCmd::Create {
+                            name,
+                            is_public,
+                            alias,
+                            version,
+                        } => {
+                            let mut request = CreateRoomRequest::new();
+                            request.name = match get_room_name_from_opt_str(name) {
+                                None => None,
+                                Some(name) => Some(Box::leak(name)),
+                            };
+                            request.preset = match is_public {
+                                false => Some(RoomPreset::PrivateChat),
+                                true => Some(RoomPreset::PublicChat),
+                            };
+                            request.room_alias_name = alias.as_deref();
+                            request.room_version = match version {
+                                None => None,
+                                Some(version) => {
+                                    let v = &RoomVersionId::try_from(version.deref()).unwrap();
+                                    println!("{:?}", v);
+                                    None
+                                }
+                            };
+                            println!("{:?}", request);
+                            if !dry_run {
+                                let response = client.create_room(request).await?;
+                                println!("{:?}", response);
+                            }
                         }
                         RoomCmd::Join { room } => {
-                            let room_id = <&RoomOrAliasId>::try_from(&room[..]).unwrap();
+                            let room_id = get_room_id_or_alias_from_str(&room);
                             let server_name: Box<ServerName> = <&ServerName>::try_from(hostname)
                                 .unwrap()
                                 .try_into()
                                 .unwrap();
                             client
-                                .join_room_by_id_or_alias(room_id, &[server_name])
+                                .join_room_by_id_or_alias(&room_id, &[server_name])
                                 .await?;
                         }
                         RoomCmd::Leave { room } => {
-                            let room_id = <&RoomId>::try_from(&room[..]).expect("Invalid Room ID");
+                            let room_id = get_room_id_from_alias_str(client, &room).await;
                             let room = client
-                                .get_joined_room(room_id)
+                                .get_joined_room(&room_id)
                                 .expect("User does not belong to this room");
                             room.leave().await?;
                         }
@@ -396,4 +475,34 @@ async fn process_cmd(
     };
 
     Ok(())
+}
+
+async fn get_room_id_from_alias_str(client: &Client, room_or_alias: &str) -> Box<RoomId> {
+    let alias = get_room_id_or_alias_from_str(room_or_alias);
+    get_room_id_from_alias(client, &alias).await
+}
+
+fn get_room_id_or_alias_from_str(room_or_alias: &str) -> Box<RoomOrAliasId> {
+    <&RoomOrAliasId>::try_from(room_or_alias)
+        .unwrap()
+        .to_owned()
+}
+
+fn get_room_alias_id_from_str(alias: &str) -> Box<RoomAliasId> {
+    <&RoomAliasId>::try_from(alias).unwrap().to_owned()
+}
+
+async fn get_room_id_from_alias<'a>(client: &'a Client, alias: &'a RoomOrAliasId) -> Box<RoomId> {
+    if alias.is_room_id() {
+        <&RoomId>::try_from(alias.deref()).unwrap().to_owned()
+    } else {
+        let room_alias = <&RoomAliasId>::try_from(alias.deref()).expect("Invalid Room Alias");
+        let req = GetRoomAliasRequest::new(room_alias);
+        let response = client.send(req, None).await.expect("Alias lookup failed");
+        response.room_id
+    }
+}
+
+fn get_room_name_from_opt_str(name: Option<String>) -> Option<Box<RoomName>> {
+    name.map(|name| <&RoomName>::try_from(&name[..]).unwrap().to_owned())
 }
