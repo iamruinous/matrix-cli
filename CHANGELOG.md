@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2022-01-23
+
+### Added
+- ban user
+- kick user
+- invite user
+- create room alias
+
+### Fixed
+- error handling
+- syncing
+
 ## [0.0.4] - 2022-01-21
 
 ### Added

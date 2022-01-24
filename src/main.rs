@@ -27,9 +27,8 @@ use matrix_sdk::{
             room::create_room::{Request as CreateRoomRequest, RoomPreset},
         },
         identifiers::RoomName,
-        RoomVersionId,
+        MxcUri, RoomAliasId, RoomId, RoomOrAliasId, RoomVersionId, ServerName, UserId,
     },
-    ruma::{MxcUri, RoomAliasId, RoomId, RoomOrAliasId, ServerName},
     Client,
 };
 
@@ -139,6 +138,18 @@ enum UserCmd {
 
 #[derive(Subcommand, Debug)]
 enum RoomCmd {
+    /// Ban a user from a matrix room
+    Ban {
+        /// Reason
+        #[clap(short, long)]
+        reason: Option<String>,
+        /// Room name or ID
+        #[clap(name = "ROOM")]
+        room: String,
+        /// User id
+        #[clap(name = "USER")]
+        user: String,
+    },
     /// Create a matrix room
     CreateAlias {
         /// Room name or ID
@@ -163,11 +174,32 @@ enum RoomCmd {
         #[clap(short, long)]
         version: Option<String>,
     },
+    /// Invite a user to a matrix room
+    Invite {
+        /// Room name or ID
+        #[clap(name = "ROOM")]
+        room: String,
+        /// User id
+        #[clap(name = "USER")]
+        user: String,
+    },
     /// Join a matrix room
     Join {
         /// Room name or ID
         #[clap(name = "ROOM")]
         room: String,
+    },
+    /// Kick a user from a matrix room
+    Kick {
+        /// Reason
+        #[clap(short, long)]
+        reason: Option<String>,
+        /// Room name or ID
+        #[clap(name = "ROOM")]
+        room: String,
+        /// User id
+        #[clap(name = "USER")]
+        user: String,
     },
     /// Leave a matrix room
     Leave {
@@ -415,6 +447,15 @@ async fn process_cmd(
             MatrixCli::RoomCmd { commands } => {
                 if let Some(cmd) = commands {
                     match cmd {
+                        RoomCmd::Ban { room, user, reason } => {
+                            let room_id = get_room_id_from_alias_str(client, &room).await;
+                            let room = client
+                                .get_joined_room(&room_id)
+                                .expect("User does not belong to this room");
+                            let user_id =
+                                <&UserId>::try_from(user.deref()).expect("Invalid user name");
+                            room.ban_user(user_id, reason.as_deref()).await?;
+                        }
                         RoomCmd::CreateAlias { room, alias } => {
                             let room_id = get_room_id_from_alias_str(client, &room).await;
                             let alias_id = get_room_alias_id_from_str(&alias);
@@ -451,6 +492,15 @@ async fn process_cmd(
                                 println!("{:?}", response);
                             }
                         }
+                        RoomCmd::Invite { room, user } => {
+                            let room_id = get_room_id_from_alias_str(client, &room).await;
+                            let room = client
+                                .get_joined_room(&room_id)
+                                .expect("User does not belong to this room");
+                            let user_id =
+                                <&UserId>::try_from(user.deref()).expect("Invalid user name");
+                            room.invite_user_by_id(user_id).await?;
+                        }
                         RoomCmd::Join { room } => {
                             let room_id = get_room_id_or_alias_from_str(&room);
                             let server_name: Box<ServerName> = <&ServerName>::try_from(hostname)
@@ -460,6 +510,15 @@ async fn process_cmd(
                             client
                                 .join_room_by_id_or_alias(&room_id, &[server_name])
                                 .await?;
+                        }
+                        RoomCmd::Kick { room, user, reason } => {
+                            let room_id = get_room_id_from_alias_str(client, &room).await;
+                            let room = client
+                                .get_joined_room(&room_id)
+                                .expect("User does not belong to this room");
+                            let user_id =
+                                <&UserId>::try_from(user.deref()).expect("Invalid user name");
+                            room.kick_user(user_id, reason.as_deref()).await?;
                         }
                         RoomCmd::Leave { room } => {
                             let room_id = get_room_id_from_alias_str(client, &room).await;
