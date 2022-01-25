@@ -326,7 +326,7 @@ async fn process_cmd(
                 if let Some(cmd) = commands {
                     match cmd {
                         MessageCmd::Send { room, msg } => {
-                            let room_id = get_room_id_from_alias_str(&client, &room).await;
+                            let room_id = get_room_id_from_alias_str(client, &room).await;
                             let mroom = client
                                 .get_joined_room(&room_id)
                                 .expect("User has not joined this room");
