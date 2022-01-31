@@ -11,8 +11,8 @@ SPDX-License-Identifier: MIT
 
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: https://github.com/iamruinous/matrix-cli/blob/master/LICENSE
-[actions-badge]: https://github.com/iamruinous/matrix-cli/actions/workflows/CI/badge.svg
-[actions-url]: https://github.com/iamruinous/matrix-cli/actions?query=workflow%3ACI+branch%3Amain
+[actions-badge]: https://github.com/iamruinous/matrix-cli/actions/workflows/ci.yml/badge.svg
+[actions-url]: https://github.com/iamruinous/matrix-cli/actions?query=workflow%3Aci.yml+branch%3Amain
 
 CLI for Matrix written in rust
 
