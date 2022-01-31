@@ -1,3 +1,7 @@
+// SPDX-FileCopyrightText: © 2022 Jade Meskill <jade.meskill@gmail.com>
+//
+// SPDX-License-Identifier: MIT
+
 // TODO: Everything in here needs better error handling
 
 extern crate pretty_env_logger;

@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: © 2022 Jade Meskill <jade.meskill@gmail.com>
+
+SPDX-License-Identifier: MIT
+-->
+
 # matrix-cli
 CLI for Matrix written in rust
 

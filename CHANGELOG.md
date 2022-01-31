@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: © 2022 Jade Meskill <jade.meskill@gmail.com>
+
+SPDX-License-Identifier: MIT
+-->
+
 # Changelog
 All notable changes to this project will be documented in this file.
 

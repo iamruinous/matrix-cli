@@ -2,4 +2,8 @@
 #
 # SPDX-License-Identifier: MIT
 
-enum-variant-name-threshold = 5
+repos:
+  - repo: https://github.com/fsfe/reuse-tool
+    rev: latest
+    hooks:
+      - id: reuse
