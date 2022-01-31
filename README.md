@@ -5,6 +5,15 @@ SPDX-License-Identifier: MIT
 -->
 
 # matrix-cli
+
+[![MIT licensed][mit-badge]][mit-url]
+[![Build Status][actions-badge]][actions-url]
+
+[mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
+[mit-url]: https://github.com/iamruinous/matrix-cli/blob/master/LICENSE
+[actions-badge]: https://github.com/iamruinous/matrix-cli/actions/workflows/CI/badge.svg
+[actions-url]: https://github.com/iamruinous/matrix-cli/actions?query=workflow%3ACI+branch%3Amain
+
 CLI for Matrix written in rust
 
 ⚠️ matrix-cli is very new, commands may change or be reorganized until things are more mature. ⚠️
