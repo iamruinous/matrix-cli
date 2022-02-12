@@ -266,7 +266,7 @@ async fn login(
     if let Some(store_path) = store_path {
         config = config.store_path(store_path);
     };
-    let client = Client::new_with_config(homeserver_url.clone(), config)
+    let client = Client::new_with_config(homeserver_url.clone(), config).await
         .expect("Could not connect to homeserver");
     match session_file_exists {
         false => {
