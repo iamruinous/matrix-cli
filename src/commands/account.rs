@@ -8,7 +8,7 @@ use tracing::info;
 use crate::client::MatrixClient;
 
 #[derive(Debug, Subcommand)]
-pub enum UserCommands {
+pub enum AccountCommands {
     /// Set your avatar URL
     SetAvatarUrl {
         /// The MXC URL of the avatar image (must start with mxc://)
@@ -35,9 +35,12 @@ pub enum UserCommands {
     GetDisplayName,
 }
 
-pub async fn handle_user_command(client: &MatrixClient, command: &UserCommands) -> Result<()> {
+pub async fn handle_account_command(
+    client: &MatrixClient,
+    command: &AccountCommands,
+) -> Result<()> {
     match command {
-        UserCommands::SetAvatarUrl { url } => {
+        AccountCommands::SetAvatarUrl { url } => {
             if !url.starts_with("mxc://") {
                 anyhow::bail!("Avatar URL must start with mxc://");
             }
@@ -50,18 +53,18 @@ pub async fn handle_user_command(client: &MatrixClient, command: &UserCommands) 
                 .await?;
             info!("Avatar URL successfully updated");
         }
-        UserCommands::UnsetAvatarUrl {} => {
+        AccountCommands::UnsetAvatarUrl {} => {
             client.inner_client().account().set_avatar_url(None).await?;
             info!("Avatar URL successfully updated");
         }
-        UserCommands::GetAvatarUrl => {
+        AccountCommands::GetAvatarUrl => {
             let avatar_url = client.inner_client().account().get_avatar_url().await?;
             match avatar_url {
                 Some(url) => println!("Current avatar URL: {}", url),
                 None => println!("No avatar URL set"),
             }
         }
-        UserCommands::DownloadAvatar { output_path } => {
+        AccountCommands::DownloadAvatar { output_path } => {
             if let Some(avatar) = client
                 .inner_client()
                 .account()
@@ -75,7 +78,7 @@ pub async fn handle_user_command(client: &MatrixClient, command: &UserCommands) 
                 );
             }
         }
-        UserCommands::UploadAvatar { path } => {
+        AccountCommands::UploadAvatar { path } => {
             let guess = mime_guess::from_path(path);
             let content = std::fs::read(path)?;
             client
@@ -85,7 +88,7 @@ pub async fn handle_user_command(client: &MatrixClient, command: &UserCommands) 
                 .await?;
             info!("Avatar successfully uploaded and set");
         }
-        UserCommands::GetDisplayName => {
+        AccountCommands::GetDisplayName => {
             let display_name = client.inner_client().account().get_display_name().await?;
             match display_name {
                 Some(name) => println!("Current display name: {}", name),

@@ -19,7 +19,7 @@ mod commands;
 
 use client::MatrixClient;
 
-use commands::{media, message, room, sync, user};
+use commands::{account, media, message, room, sync};
 
 #[derive(Debug, Deserialize)]
 struct MatrixConfig {
@@ -156,9 +156,9 @@ enum Commands {
     #[command(subcommand)]
     Sync(sync::SyncCommands),
 
-    /// User management commands
+    /// Account management commands
     #[command(subcommand)]
-    User(user::UserCommands),
+    Account(account::AccountCommands),
 }
 
 fn setup_logging(
@@ -317,9 +317,9 @@ async fn main() -> anyhow::Result<()> {
             sync::handle_sync_command(&client, sync_cmd).await?;
         }
 
-        Commands::User(user_cmd) => {
-            debug!(?user_cmd, "Executing user command");
-            user::handle_user_command(&client, user_cmd).await?;
+        Commands::Account(account_cmd) => {
+            debug!(?account_cmd, "Executing account command");
+            account::handle_account_command(&client, account_cmd).await?;
         }
     }
 
