@@ -1,27 +1,50 @@
-# SPDX-FileCopyrightText: © 2022 Jade Meskill <jade.meskill@gmail.com>
+# SPDX-FileCopyrightText: © 2024 Jade Meskill <jade.meskill@gmail.com>
 #
 # SPDX-License-Identifier: MIT
 
 [package]
 name = "matrix-cli"
-authors = ["Jade Meskill <jade.meskill@gmail.com>"]
-version = "0.0.6"
+version = "0.6.0"
 edition = "2021"
+authors = ["Jade Meskill <jade.meskill@gmail.com>"]
+description = "A Matrix CLI client"
 license = "MIT"
 publish = []
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+# Core Matrix SDK
+matrix-sdk = { version = "0.8", features = ["anyhow", "sqlite"] }
+
+# Async runtime
+tokio = { version = "1.36", features = ["full"] }
+
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Configuration management
+config = { version = "0.14", features = ["toml"] }
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+
+# Error handling
 anyhow = "1.0"
-log = "0.4"
-pretty_env_logger = "0.4"
-chrono = "0.4"
-clap = { version = "3.0.10", features = ["derive", "env"] }
-matrix-sdk = "0.8.0"
+
+# Logging and tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# File system and paths
+dirs = "5.0"
+
+# Media handling
+mime = "0.3"
 mime_guess = "2.0"
-tokio = { version = "1", features = ["full"] }
-url = { version = "2", features = ["serde"] }
-reqwest = { version = "*", features = ["native-tls-vendored"] }
+
+# Utilities
 serde_json = "1.0"
-tabled = "0.4"
+rand = "0.8"
+
+[dev-dependencies]
+pretty_assertions = "1.4"
+tempfile = "3.10"
