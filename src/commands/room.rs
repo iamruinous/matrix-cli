@@ -84,7 +84,7 @@ pub async fn handle_room_command(client: &MatrixClient, command: &RoomCommands) 
         } => {
             let mut room_request = CreateRoomRequest::new();
             room_request.name = Some(name.clone());
-            room_request.topic = topic.clone();
+            room_request.topic.clone_from(topic);
             room_request.visibility = if *public {
                 Visibility::Public
             } else {

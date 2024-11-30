@@ -6,4 +6,3 @@ pub mod account;
 pub mod media;
 pub mod message;
 pub mod room;
-pub mod sync;

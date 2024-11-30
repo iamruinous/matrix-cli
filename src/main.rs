@@ -19,7 +19,7 @@ mod commands;
 
 use client::MatrixClient;
 
-use commands::{account, media, message, room, sync};
+use commands::{account, media, message, room};
 
 #[derive(Debug, Deserialize)]
 struct MatrixConfig {
@@ -140,6 +140,10 @@ enum Commands {
     /// Logout and clear session
     Logout,
 
+    /// Account management commands
+    #[command(subcommand)]
+    Account(account::AccountCommands),
+
     /// Room management commands
     #[command(subcommand)]
     Room(room::RoomCommands),
@@ -151,14 +155,6 @@ enum Commands {
     /// Media management commands
     #[command(subcommand)]
     Media(media::MediaCommands),
-
-    /// Sync commands
-    #[command(subcommand)]
-    Sync(sync::SyncCommands),
-
-    /// Account management commands
-    #[command(subcommand)]
-    Account(account::AccountCommands),
 }
 
 fn setup_logging(
@@ -297,6 +293,11 @@ async fn main() -> anyhow::Result<()> {
             info!("Logout successful");
         }
 
+        Commands::Account(account_cmd) => {
+            debug!(?account_cmd, "Executing account command");
+            account::handle_account_command(&client, account_cmd).await?;
+        }
+
         Commands::Room(room_cmd) => {
             debug!(?room_cmd, "Executing room command");
             room::handle_room_command(&client, room_cmd).await?;
@@ -310,16 +311,6 @@ async fn main() -> anyhow::Result<()> {
         Commands::Media(media_cmd) => {
             debug!(?media_cmd, "Executing media command");
             media::handle_media_command(&client, media_cmd).await?;
-        }
-
-        Commands::Sync(sync_cmd) => {
-            debug!(?sync_cmd, "Executing sync command");
-            sync::handle_sync_command(&client, sync_cmd).await?;
-        }
-
-        Commands::Account(account_cmd) => {
-            debug!(?account_cmd, "Executing account command");
-            account::handle_account_command(&client, account_cmd).await?;
         }
     }
 

@@ -5,11 +5,11 @@
 use anyhow::Result;
 use matrix_sdk::{
     config::SyncSettings, matrix_auth::MatrixSession, ruma::api::client::filter::FilterDefinition,
-    Client, Error, LoopCtrl,
+    Client,
 };
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::info;
 
 /// The data needed to re-build a client.
@@ -70,7 +70,7 @@ impl MatrixClient {
                 sync_token,
             } = serde_json::from_str(&serialized_session)?;
 
-            let client = build_client(&homeserver, &store_path, &client_session.passphrase).await?;
+            let client = build_client(homeserver, &store_path, &client_session.passphrase).await?;
 
             // Restore the Matrix user session.
             client.restore_session(user_session).await?;
@@ -86,7 +86,7 @@ impl MatrixClient {
                 .map(char::from)
                 .collect::<String>();
 
-            let client = build_client(&homeserver, &store_path, &passphrase).await?;
+            let client = build_client(homeserver, &store_path, &passphrase).await?;
             (client, None, passphrase)
         };
 
@@ -170,46 +170,46 @@ impl MatrixClient {
         Ok(())
     }
 
-    pub async fn sync(&self) -> Result<()> {
-        if !self.client.logged_in() {
-            info!("Not logged in, skipping sync_once");
-            return Ok(());
-        }
+    // pub async fn sync(&self) -> Result<()> {
+    //     if !self.client.logged_in() {
+    //         info!("Not logged in, skipping sync_once");
+    //         return Ok(());
+    //     }
 
-        // Enable room members lazy-loading, it will speed up the initial sync a lot
-        // with accounts in lots of rooms.
-        // See <https://spec.matrix.org/v1.6/client-server-api/#lazy-loading-room-members>.
-        let filter = FilterDefinition::with_lazy_loading();
+    //     // Enable room members lazy-loading, it will speed up the initial sync a lot
+    //     // with accounts in lots of rooms.
+    //     // See <https://spec.matrix.org/v1.6/client-server-api/#lazy-loading-room-members>.
+    //     let filter = FilterDefinition::with_lazy_loading();
 
-        let mut sync_settings = SyncSettings::default().filter(filter.into());
+    //     let mut sync_settings = SyncSettings::default().filter(filter.into());
 
-        // We restore the sync where we left.
-        // This is not necessary when not using `sync_once`. The other sync methods get
-        // the sync token from the store.
-        info!(?self.sync_token, "Initial sync token");
-        if let Some(sync_token) = &self.sync_token {
-            sync_settings = sync_settings.token(sync_token);
-        }
+    //     // We restore the sync where we left.
+    //     // This is not necessary when not using `sync_once`. The other sync methods get
+    //     // the sync token from the store.
+    //     info!(?self.sync_token, "Initial sync token");
+    //     if let Some(sync_token) = &self.sync_token {
+    //         sync_settings = sync_settings.token(sync_token);
+    //     }
 
-        let session_file = self.session_file.as_path();
+    //     let session_file = self.session_file.as_path();
 
-        // This loops until we kill the program or an error happens.
-        self.client
-            .sync_with_result_callback(sync_settings, |sync_result| async move {
-                let response = sync_result?;
+    //     // This loops until we kill the program or an error happens.
+    //     self.client
+    //         .sync_with_result_callback(sync_settings, |sync_result| async move {
+    //             let response = sync_result?;
 
-                // We persist the token each time to be able to restore our session
-                persist_sync_token(session_file.to_path_buf(), response.next_batch)
-                    .await
-                    .map_err(|err| Error::UnknownError(err.into()))?;
+    //             // We persist the token each time to be able to restore our session
+    //             persist_sync_token(session_file.to_path_buf(), response.next_batch)
+    //                 .await
+    //                 .map_err(|err| Error::UnknownError(err.into()))?;
 
-                Ok(LoopCtrl::Continue)
-            })
-            .await?;
+    //             Ok(LoopCtrl::Continue)
+    //         })
+    //         .await?;
 
-        info!("sync complete");
-        Ok(())
-    }
+    //     info!("sync complete");
+    //     Ok(())
+    // }
 
     pub async fn save_session(&self) -> Result<()> {
         let client_session = ClientSession {
@@ -241,12 +241,12 @@ impl MatrixClient {
 
 async fn build_client(
     homeserver: &str,
-    store_path: &PathBuf,
+    store_path: &Path,
     passphrase: &str,
 ) -> anyhow::Result<Client> {
     let client_builder = Client::builder()
         .homeserver_url(homeserver)
-        .sqlite_store(store_path.clone(), Some(&passphrase))
+        .sqlite_store(store_path, Some(passphrase))
         .user_agent("matrix-cli/v0.1.0");
 
     Ok(client_builder.build().await?)
