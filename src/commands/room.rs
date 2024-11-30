@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: MIT
 
+use std::path::PathBuf;
+
 use crate::client::MatrixClient;
 use anyhow::Result;
 use clap::Subcommand;
@@ -11,6 +13,7 @@ use matrix_sdk::ruma::api::client::room::Visibility;
 use matrix_sdk::ruma::RoomId;
 use matrix_sdk::ruma::RoomOrAliasId;
 use matrix_sdk::ruma::UserId;
+use tracing::info;
 
 #[derive(Debug, Subcommand)]
 pub enum RoomCommands {
@@ -47,6 +50,14 @@ pub enum RoomCommands {
         room_id: String,
         /// User ID to invite
         user_id: String,
+    },
+    /// Upload and set an avatar from a local file
+    UploadAvatar {
+        /// Room ID
+        room_id: String,
+        /// Path to the image file to upload
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
     },
 }
 
@@ -103,6 +114,20 @@ pub async fn handle_room_command(client: &MatrixClient, command: &RoomCommands) 
             let user_alias = <&UserId>::try_from(user_id.as_str()).unwrap();
             room.invite_user_by_id(user_alias).await?;
             println!("Invited {} to room {}", user_id, room_id);
+        }
+        RoomCommands::UploadAvatar { room_id, path } => {
+            let room_alias = <&RoomOrAliasId>::try_from(room_id.as_str()).unwrap();
+            let server_name = room_alias.server_name().unwrap().to_owned();
+            let room = inner_client
+                .join_room_by_id_or_alias(room_alias, &[server_name])
+                .await?;
+
+            let guess = mime_guess::from_path(path);
+            let content = std::fs::read(path)?;
+            room.upload_avatar(&guess.first().unwrap(), content, None)
+                .await?;
+            info!("Avatar successfully uploaded and set");
+            println!("Set avatar for room {}", room_id);
         }
     }
     Ok(())
